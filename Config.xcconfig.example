@@ -1,0 +1,6 @@
+// Copiar como Config.xcconfig y rellenar los valores reales
+// Obtener en: https://console.cloud.google.com → APIs & Servicios → Credenciales
+
+GID_CLIENT_ID = YOUR_GOOGLE_CLIENT_ID
+GID_REVERSED_CLIENT_ID = com.googleusercontent.apps.YOUR_CLIENT_ID
+API_BASE_HOST = localhost:8080

@@ -1,0 +1,82 @@
+// Tabs
+"tab.dashboard"     = "Dashboard";
+"tab.events"        = "Events";
+"tab.users"         = "Users";
+"tab.settings"      = "Settings";
+
+// Common
+"loading"           = "Loading...";
+"error"             = "Error";
+"cancel"            = "Cancel";
+"save"              = "Save";
+"ok"                = "OK";
+"refresh"           = "Refresh";
+
+// Status
+"status.running"    = "running";
+"status.stopped"    = "stopped";
+
+// Dashboard
+"dashboard.noData.title"       = "No Data";
+"dashboard.noData.desc"        = "Could not load the dashboard.";
+"dashboard.noContainers.title" = "No Containers";
+"dashboard.noContainers.desc"  = "No active containers found.";
+"dashboard.summary.containers" = "CONTAINERS";
+"dashboard.summary.cpu"        = "CPU";
+"dashboard.summary.memory"     = "MEMORY";
+"dashboard.summary.network"    = "NETWORK";
+"dashboard.summary.disk"       = "DISK I/O";
+"dashboard.card.cpu"           = "CPU";
+"dashboard.card.memory"        = "MEMORY";
+"dashboard.card.network"       = "NETWORK";
+"dashboard.card.disk"          = "DISK I/O";
+"dashboard.card.processes"     = "PROCESSES";
+"dashboard.of"                 = "of";
+"dashboard.quota.title"        = "YOUTUBE API QUOTA";
+"dashboard.quota.reset"        = "Resets";
+
+// Events / Notifications
+"events.title"         = "Events";
+"events.empty.title"   = "No Events";
+"events.waiting"       = "Waiting for server events...";
+"events.noConnection"  = "No server connection.";
+"events.connected"     = "Connected";
+"events.disconnected"  = "Disconnected";
+"events.notif.allow"   = "Enable Notifications";
+"events.notif.desc"    = "Allow notifications to receive alerts even when the app is in the background.";
+"events.notif.open"    = "Open Settings";
+
+// Users
+"users.title"            = "Users";
+"users.add"              = "Add User";
+"users.empty.title"      = "No Users";
+"users.empty.desc"       = "No registered users found.";
+"users.email"            = "Email";
+"users.name"             = "Name";
+"users.name.optional"    = "Name (optional)";
+"users.grantAdmin"       = "Grant Admin";
+"users.created"          = "Created";
+"users.admin"            = "Admin";
+"users.admin.revoke"     = "Revoke Admin";
+"users.admin.grant"      = "Make Admin";
+"users.delete"           = "Delete User";
+"users.delete.confirm"   = "Delete";
+"users.delete.message"   = "This action cannot be undone.";
+"users.email.required"   = "Email is required";
+"users.info"             = "User info";
+"users.actions"          = "Actions";
+"users.noSelf"           = "You cannot modify your own account here.";
+
+// Settings
+"settings.title"    = "Settings";
+"settings.account"  = "Account";
+"settings.session"  = "Session";
+"settings.signOut"  = "Sign Out";
+"settings.appearance"        = "Appearance";
+"settings.appearance.system" = "System";
+"settings.appearance.light"  = "Light";
+"settings.appearance.dark"   = "Dark";
+"settings.language" = "Language";
+"settings.info"     = "Info";
+"settings.backend"  = "Backend";
+"settings.version"  = "Version";
