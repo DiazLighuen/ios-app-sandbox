@@ -1,0 +1,11 @@
+# Xcode project — generado por xcodegen
+SandboxApp.xcodeproj/
+
+# Secretos locales (equivalente a .env)
+Config.xcconfig
+
+# Xcode build artifacts
+build/
+DerivedData/
+*.xcuserstate
+*.xcbkptlist

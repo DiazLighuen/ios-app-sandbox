@@ -1,0 +1,82 @@
+// Tabs
+"tab.dashboard"     = "Dashboard";
+"tab.events"        = "Ereignisse";
+"tab.users"         = "Benutzer";
+"tab.settings"      = "Einstellungen";
+
+// Common
+"loading"           = "Laden...";
+"error"             = "Fehler";
+"cancel"            = "Abbrechen";
+"save"              = "Speichern";
+"ok"                = "OK";
+"refresh"           = "Aktualisieren";
+
+// Status
+"status.running"    = "läuft";
+"status.stopped"    = "gestoppt";
+
+// Dashboard
+"dashboard.noData.title"       = "Keine Daten";
+"dashboard.noData.desc"        = "Dashboard konnte nicht geladen werden.";
+"dashboard.noContainers.title" = "Keine Container";
+"dashboard.noContainers.desc"  = "Keine aktiven Container gefunden.";
+"dashboard.summary.containers" = "CONTAINER";
+"dashboard.summary.cpu"        = "CPU";
+"dashboard.summary.memory"     = "SPEICHER";
+"dashboard.summary.network"    = "NETZWERK";
+"dashboard.summary.disk"       = "DATENTRÄGER";
+"dashboard.card.cpu"           = "CPU";
+"dashboard.card.memory"        = "SPEICHER";
+"dashboard.card.network"       = "NETZWERK";
+"dashboard.card.disk"          = "DATENTRÄGER I/O";
+"dashboard.card.processes"     = "PROZESSE";
+"dashboard.of"                 = "von";
+"dashboard.quota.title"        = "YOUTUBE-API-KONTINGENT";
+"dashboard.quota.reset"        = "Zurückgesetzt am";
+
+// Events / Notifications
+"events.title"         = "Ereignisse";
+"events.empty.title"   = "Keine Ereignisse";
+"events.waiting"       = "Warte auf Server-Ereignisse...";
+"events.noConnection"  = "Keine Serververbindung.";
+"events.connected"     = "Verbunden";
+"events.disconnected"  = "Getrennt";
+"events.notif.allow"   = "Benachrichtigungen aktivieren";
+"events.notif.desc"    = "Erlaube Benachrichtigungen, um Alarme im Hintergrund zu erhalten.";
+"events.notif.open"    = "Einstellungen öffnen";
+
+// Users
+"users.title"            = "Benutzer";
+"users.add"              = "Benutzer hinzufügen";
+"users.empty.title"      = "Keine Benutzer";
+"users.empty.desc"       = "Keine registrierten Benutzer gefunden.";
+"users.email"            = "E-Mail";
+"users.name"             = "Name";
+"users.name.optional"    = "Name (optional)";
+"users.grantAdmin"       = "Admin gewähren";
+"users.created"          = "Erstellt";
+"users.admin"            = "Admin";
+"users.admin.revoke"     = "Admin entziehen";
+"users.admin.grant"      = "Admin machen";
+"users.delete"           = "Benutzer löschen";
+"users.delete.confirm"   = "Löschen";
+"users.delete.message"   = "Diese Aktion kann nicht rückgängig gemacht werden.";
+"users.email.required"   = "E-Mail ist erforderlich";
+"users.info"             = "Benutzerinfo";
+"users.actions"          = "Aktionen";
+"users.noSelf"           = "Eigenes Konto kann hier nicht geändert werden.";
+
+// Settings
+"settings.title"    = "Einstellungen";
+"settings.account"  = "Konto";
+"settings.session"  = "Sitzung";
+"settings.signOut"  = "Abmelden";
+"settings.appearance"        = "Erscheinungsbild";
+"settings.appearance.system" = "System";
+"settings.appearance.light"  = "Hell";
+"settings.appearance.dark"   = "Dunkel";
+"settings.language" = "Sprache";
+"settings.info"     = "Info";
+"settings.backend"  = "Backend";
+"settings.version"  = "Version";

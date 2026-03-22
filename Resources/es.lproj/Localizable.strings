@@ -1,0 +1,82 @@
+// Tabs
+"tab.dashboard"     = "Dashboard";
+"tab.events"        = "Eventos";
+"tab.users"         = "Usuarios";
+"tab.settings"      = "Ajustes";
+
+// Common
+"loading"           = "Cargando...";
+"error"             = "Error";
+"cancel"            = "Cancelar";
+"save"              = "Guardar";
+"ok"                = "OK";
+"refresh"           = "Actualizar";
+
+// Status
+"status.running"    = "activo";
+"status.stopped"    = "detenido";
+
+// Dashboard
+"dashboard.noData.title"       = "Sin datos";
+"dashboard.noData.desc"        = "No se pudo cargar el dashboard.";
+"dashboard.noContainers.title" = "Sin containers";
+"dashboard.noContainers.desc"  = "No hay containers activos.";
+"dashboard.summary.containers" = "CONTAINERS";
+"dashboard.summary.cpu"        = "CPU";
+"dashboard.summary.memory"     = "MEMORIA";
+"dashboard.summary.network"    = "RED";
+"dashboard.summary.disk"       = "DISCO I/O";
+"dashboard.card.cpu"           = "CPU";
+"dashboard.card.memory"        = "MEMORIA";
+"dashboard.card.network"       = "RED";
+"dashboard.card.disk"          = "DISCO I/O";
+"dashboard.card.processes"     = "PROCESOS";
+"dashboard.of"                 = "de";
+"dashboard.quota.title"        = "CUOTA API YOUTUBE";
+"dashboard.quota.reset"        = "Reinicia";
+
+// Events / Notifications
+"events.title"         = "Eventos";
+"events.empty.title"   = "Sin eventos";
+"events.waiting"       = "Esperando eventos del servidor...";
+"events.noConnection"  = "Sin conexión al servidor.";
+"events.connected"     = "Conectado";
+"events.disconnected"  = "Desconectado";
+"events.notif.allow"   = "Habilitar notificaciones";
+"events.notif.desc"    = "Permite recibir alertas cuando la app está en segundo plano.";
+"events.notif.open"    = "Abrir ajustes";
+
+// Users
+"users.title"            = "Usuarios";
+"users.add"              = "Agregar usuario";
+"users.empty.title"      = "Sin usuarios";
+"users.empty.desc"       = "No se encontraron usuarios registrados.";
+"users.email"            = "Email";
+"users.name"             = "Nombre";
+"users.name.optional"    = "Nombre (opcional)";
+"users.grantAdmin"       = "Otorgar admin";
+"users.created"          = "Creado";
+"users.admin"            = "Admin";
+"users.admin.revoke"     = "Revocar admin";
+"users.admin.grant"      = "Hacer admin";
+"users.delete"           = "Eliminar usuario";
+"users.delete.confirm"   = "Eliminar";
+"users.delete.message"   = "Esta acción no se puede deshacer.";
+"users.email.required"   = "El email es obligatorio";
+"users.info"             = "Información";
+"users.actions"          = "Acciones";
+"users.noSelf"           = "No puedes modificar tu propia cuenta desde aquí.";
+
+// Settings
+"settings.title"    = "Ajustes";
+"settings.account"  = "Cuenta";
+"settings.session"  = "Sesión";
+"settings.signOut"  = "Cerrar sesión";
+"settings.appearance"        = "Apariencia";
+"settings.appearance.system" = "Sistema";
+"settings.appearance.light"  = "Claro";
+"settings.appearance.dark"   = "Oscuro";
+"settings.language" = "Idioma";
+"settings.info"     = "Info";
+"settings.backend"  = "Backend";
+"settings.version"  = "Versión";
