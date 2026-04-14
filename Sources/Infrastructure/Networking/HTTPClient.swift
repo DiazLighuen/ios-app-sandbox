@@ -3,8 +3,9 @@ import Foundation
 final class HTTPClient {
     static let shared = HTTPClient()
     let baseURL: URL = {
-        let host = Bundle.main.object(forInfoDictionaryKey: "API_BASE_HOST") as? String ?? "localhost:8080"
-        return URL(string: "http://\(host)")!
+        let host = Bundle.main.object(forInfoDictionaryKey: "API_BASE_HOST") as? String ?? "localhost"
+        let scheme = (host.hasPrefix("localhost") || host.hasPrefix("127.0.0.1")) ? "http" : "https"
+        return URL(string: "\(scheme)://\(host)")!
     }()
     private let session: URLSession
     private let decoder: JSONDecoder
