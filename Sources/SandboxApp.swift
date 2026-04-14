@@ -3,6 +3,9 @@ import GoogleSignIn
 
 @main
 struct SandboxApp: App {
+    init() {
+        print("🌐 [Config] host=\(AppConfig.apiHost) baseURL=\(HTTPClient.shared.baseURL)")
+    }
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var authViewModel   = AuthViewModel()
     @StateObject private var languageManager = LanguageManager()

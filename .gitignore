@@ -4,6 +4,9 @@ SandboxApp.xcodeproj/
 # Secretos locales (equivalente a .env)
 Config.xcconfig
 
+# Claude Code tooling
+.claude/
+
 # Xcode build artifacts
 build/
 DerivedData/
