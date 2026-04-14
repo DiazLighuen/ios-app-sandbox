@@ -79,9 +79,11 @@ struct SudokuCellView: View {
         viewModel.originalGrid?[pos.row, pos.col] != 0
     }
 
+    /// A cell is "solved" (shown in blue) only if it was empty in currentGrid
+    /// (the state at solve-time) but has a value in solvedGrid.
     private var isSolvedCell: Bool {
         viewModel.displayMode == .solved &&
-        viewModel.originalGrid?[pos.row, pos.col] == 0 &&
+        (viewModel.currentGrid?[pos.row, pos.col] ?? 0) == 0 &&
         value != 0
     }
 
