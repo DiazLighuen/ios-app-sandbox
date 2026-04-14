@@ -34,6 +34,8 @@ struct ContainerInfo: Identifiable, Decodable {
     let image: String
     let status: String
     let running: Bool
+    let controllable: Bool
+    let module: String?
     let cpuPct:   Double
     let memRss:   Int
     let memLimit: Int
@@ -45,7 +47,7 @@ struct ContainerInfo: Identifiable, Decodable {
     let pids:     Int
 
     enum CodingKeys: String, CodingKey {
-        case id, name, image, status, running, pids
+        case id, name, image, status, running, controllable, module, pids
         case cpuPct   = "cpu_pct"
         case memRss   = "mem_rss"
         case memLimit = "mem_limit"
@@ -60,6 +62,12 @@ struct ContainerInfo: Identifiable, Decodable {
     var memFormatted: String { "\(formatBytes(memRss)) / \(formatBytes(memLimit)) (\(String(format: "%.1f%%", memPct)))" }
     var netFormatted: String { "↑ \(formatBytes(netTx))  ↓ \(formatBytes(netRx))" }
     var blkFormatted: String { "R \(formatBytes(blkRead))  W \(formatBytes(blkWrite))" }
+}
+
+struct ToggleResult: Decodable {
+    let success: Bool
+    let name: String
+    let action: String
 }
 
 func formatBytes(_ bytes: Int) -> String {

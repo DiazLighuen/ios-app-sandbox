@@ -18,7 +18,12 @@ struct DashboardView: View {
                         }
                         LazyVGrid(columns: columns, spacing: 16) {
                             ForEach(dashboard.containers.items) { container in
-                                ContainerCard(container: container)
+                                ContainerCard(
+                                    container: container,
+                                    isToggling: viewModel.togglingContainers.contains(container.name)
+                                ) {
+                                    Task { await viewModel.toggleContainer(container) }
+                                }
                             }
                         }
                     }
@@ -167,6 +172,8 @@ private struct SummaryStat: View {
 
 private struct ContainerCard: View {
     let container: ContainerInfo
+    let isToggling: Bool
+    let onToggle: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -180,6 +187,10 @@ private struct ContainerCard: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if container.controllable {
+                    ToggleButton(running: container.running, isToggling: isToggling, onToggle: onToggle)
+                        .padding(.trailing, 6)
+                }
                 StatusBadge(running: container.running)
             }
             .padding([.horizontal, .top], 14)
@@ -252,6 +263,29 @@ private struct ContainerCard: View {
 }
 
 // MARK: - Reusable Components
+
+private struct ToggleButton: View {
+    let running: Bool
+    let isToggling: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            if isToggling {
+                ProgressView()
+                    .frame(width: 28, height: 28)
+            } else {
+                Image(systemName: running ? "stop.fill" : "play.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(running ? Color.red : Color.green)
+                    .frame(width: 28, height: 28)
+                    .background((running ? Color.red : Color.green).opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+            }
+        }
+        .disabled(isToggling)
+        .buttonStyle(.plain)
+    }
+}
 
 private struct StatusBadge: View {
     let running: Bool
