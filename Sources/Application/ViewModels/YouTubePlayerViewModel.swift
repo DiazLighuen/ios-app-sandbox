@@ -31,10 +31,10 @@ final class YouTubePlayerViewModel: ObservableObject {
         do {
             let videoDetail = try await repository.fetchVideo(id: videoId)
             detail = videoDetail
-            // Build proxy URL: /api/youtube/stream/{id}?quality=<best mp4 quality>
-            // The backend proxies the yt-dlp stream — direct CDN URLs are IP-locked to the server.
-            let quality = videoDetail.formatStreams.first(where: { $0.ext == "mp4" })?.quality ?? "720p"
-            let proxyPath = "/api/youtube/stream/\(videoId)?quality=\(quality)"
+            // Build proxy URL: /api/youtube/stream/{id}
+            // No enviamos quality — el backend elige el mejor formato disponible via yt-dlp.
+            // Los quality labels de Invidious (formatStreams) no siempre coinciden con los de yt-dlp.
+            let proxyPath = "/api/youtube/stream/\(videoId)"
             let url = URL(string: HTTPClient.shared.baseURL.absoluteString + proxyPath)!
             print("▶️ [Player] Proxy URL: \(url)")
             let token = try? KeychainService.shared.getToken()

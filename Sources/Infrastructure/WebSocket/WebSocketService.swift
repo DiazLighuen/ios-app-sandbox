@@ -15,7 +15,7 @@ final class WebSocketService: ObservableObject {
 
     private var wsURL: URL? {
         guard let token = (try? KeychainService.shared.getToken()) ?? nil else { return nil }
-        let host = Bundle.main.object(forInfoDictionaryKey: "API_BASE_HOST") as? String ?? "localhost:8080"
+        let host = AppConfig.apiHost
         let scheme = host.hasPrefix("localhost") || host.hasPrefix("127.0.0.1") ? "ws" : "wss"
         return URL(string: "\(scheme)://\(host)/ws?token=\(token)")
     }

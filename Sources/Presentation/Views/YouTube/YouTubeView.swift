@@ -2,6 +2,7 @@ import SwiftUI
 
 struct YouTubeView: View {
     @StateObject private var viewModel = YouTubeViewModel()
+    @EnvironmentObject private var authViewModel: AuthViewModel
     @State private var selectedVideoId: String?
 
     var body: some View {
@@ -39,7 +40,44 @@ struct YouTubeView: View {
             .navigationDestination(item: $selectedVideoId) { id in
                 VideoPlayerView(videoId: id)
             }
+            .overlay(alignment: .bottom) {
+                if viewModel.needsYouTubeAuth {
+                    YouTubeAuthBanner {
+                        guard let root = UIApplication.shared.connectedScenes
+                            .compactMap({ $0 as? UIWindowScene })
+                            .first?.windows.first?.rootViewController else { return }
+                        Task {
+                            await authViewModel.linkYouTubeAccount(presenting: root)
+                            if authViewModel.error == nil {
+                                await viewModel.retryAfterAuth()
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+private struct YouTubeAuthBanner: View {
+    let onLink: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Cuenta de YouTube no vinculada")
+                .font(.subheadline.weight(.semibold))
+            Text("Seleccioná la cuenta o canal de YouTube que querés usar.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button(action: onLink) {
+                Label("Vincular cuenta de YouTube", systemImage: "link")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .padding()
     }
 }
 
