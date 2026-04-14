@@ -1,6 +1,5 @@
 import Vision
 import CoreImage
-import CoreImage.CIFilterBuiltins
 import UIKit
 
 struct SudokuDetector {
@@ -25,17 +24,17 @@ struct SudokuDetector {
 
         let gridBounds = await findGridBounds(cgImage: cgImage)
 
-        // Strategy 1: detect text rectangles → recognize each character region
-        let s1 = await textRectOCR(cgImage: cgImage, gridBounds: gridBounds)
-        if s1.flatMap({ $0 }).filter({ $0 != 0 }).count >= 5 { return SudokuGrid(cells: s1) }
+        // Strategy 1: full-grid accurate OCR — proven to find all digits.
+        // Uses Vision bounding boxes to place each digit into the correct cell.
+        let s1 = await fullGridOCR(cgImage: cgImage, gridBounds: gridBounds)
+        if s1.flatMap({ $0 }).filter({ $0 != 0 }).count >= 10 { return SudokuGrid(cells: s1) }
 
-        // Strategy 2: row-by-row strips
-        let s2 = await rowByRowOCR(cgImage: cgImage, gridBounds: gridBounds)
-        if s2.flatMap({ $0 }).filter({ $0 != 0 }).count >= 5 { return SudokuGrid(cells: s2) }
+        // Strategy 2: cell-by-cell (accurate OCR on each 300 px crop).
+        // Slower but more robust when the full-image pass misses digits.
+        let s2 = await cellByCellOCR(cgImage: cgImage, gridBounds: gridBounds)
+        if s2.flatMap({ $0 }).filter({ $0 != 0 }).count >= 1 { return SudokuGrid(cells: s2) }
 
-        // Strategy 3: cell-by-cell at 300 px
-        let s3 = await cellByCellOCR(cgImage: cgImage, gridBounds: gridBounds)
-        return SudokuGrid(cells: s3)
+        throw DetectionError.ocrFailed
     }
 
     // MARK: - Grid detection
@@ -43,7 +42,7 @@ struct SudokuDetector {
     private static func findGridBounds(cgImage: CGImage) async -> CGRect {
         let ci = CIImage(cgImage: cgImage)
         if let obs = await detectLargestRect(in: ci) { return obs.boundingBox }
-        return CGRect(x: 0.05, y: 0.05, width: 0.90, height: 0.90)
+        return CGRect(x: 0.02, y: 0.02, width: 0.96, height: 0.96)
     }
 
     private static func detectLargestRect(in image: CIImage) async -> VNRectangleObservation? {
@@ -59,121 +58,68 @@ struct SudokuDetector {
         }
     }
 
-    // MARK: - Strategy 1: VNDetectTextRectanglesRequest + per-char recognition
+    // MARK: - Strategy 1: Full-grid accurate OCR
 
-    /// Finds all text/character bounding boxes in the image first,
-    /// then crops + recognizes each one. Works well for isolated digits.
-    private static func textRectOCR(cgImage: CGImage, gridBounds: CGRect) async -> [[Int]] {
-        let charBoxes = await detectCharacterBoxes(cgImage: cgImage)
-        let imgW = CGFloat(cgImage.width)
-        let imgH = CGFloat(cgImage.height)
+    /// Runs VNRecognizeTextRequest (.accurate) on the whole image and uses each
+    /// observation's bounding box to determine which cell the digit belongs to.
+    private static func fullGridOCR(cgImage: CGImage, gridBounds: CGRect) async -> [[Int]] {
+        let observations = await recognizeAllText(cgImage: cgImage)
         var matrix = Array(repeating: Array(repeating: 0, count: 9), count: 9)
 
-        for box in charBoxes {
-            // box is Vision normalized coords (origin bottom-left)
+        for obs in observations {
+            // Each observation's boundingBox is in Vision normalized coords (origin = bottom-left).
+            let box = obs.boundingBox
+
+            // Check that the centre of the observation falls inside the detected grid.
             guard gridBounds.contains(CGPoint(x: box.midX, y: box.midY)) else { continue }
 
+            // Relative position inside the grid (0…1 each axis).
             let relX = (box.midX - gridBounds.minX) / gridBounds.width
             let relY = (box.midY - gridBounds.minY) / gridBounds.height
-            let col  = max(0, min(Int(relX * 9), 8))
-            let row  = max(0, min(8 - Int(relY * 9), 8))
+            // relY is 0 at the bottom of the grid → row 8; 1 at top → row 0.
+            let col = max(0, min(Int(relX * 9), 8))
+            let row = max(0, min(8 - Int(relY * 9), 8))
 
-            // Convert to CGImage coords (flip Y)
-            let cropRect = CGRect(
-                x: box.minX * imgW,
-                y: (1.0 - box.maxY) * imgH,
-                width:  box.width  * imgW,
-                height: box.height * imgH
-            )
-            guard let crop   = cgImage.cropping(to: cropRect),
-                  let scaled = upscaled(crop, to: 200) else { continue }
-
-            let digit = await recognizeSingleDigit(scaled)
+            // Try to extract a single digit from this observation.
+            let digit = extractBestDigit(from: obs)
             if digit != 0 { matrix[row][col] = digit }
         }
         return matrix
     }
 
-    /// Returns character-level bounding boxes (Vision normalized, bottom-left origin).
-    private static func detectCharacterBoxes(cgImage: CGImage) async -> [CGRect] {
-        await withCheckedContinuation { (c: CheckedContinuation<[CGRect], Never>) in
-            let req = VNDetectTextRectanglesRequest { r, _ in
-                guard let obs = r.results as? [VNTextObservation] else { c.resume(returning: []); return }
-                var boxes: [CGRect] = []
-                for o in obs {
-                    if let chars = o.characterBoxes, !chars.isEmpty {
-                        boxes += chars.map(\.boundingBox)
-                    } else {
-                        boxes.append(o.boundingBox)   // fallback: whole word box
-                    }
-                }
-                c.resume(returning: boxes)
+    private static func recognizeAllText(cgImage: CGImage) async -> [VNRecognizedTextObservation] {
+        await withCheckedContinuation { (c: CheckedContinuation<[VNRecognizedTextObservation], Never>) in
+            let req = VNRecognizeTextRequest { r, _ in
+                c.resume(returning: (r.results as? [VNRecognizedTextObservation]) ?? [])
             }
-            req.reportCharacterBoxes = true
+            req.recognitionLevel       = .accurate
+            req.usesLanguageCorrection = false
+            req.customWords            = ["1","2","3","4","5","6","7","8","9"]
             let h = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
             do { try h.perform([req]) } catch { c.resume(returning: []) }
         }
     }
 
-    // MARK: - Strategy 2: Row-by-row strips
-
-    private static func rowByRowOCR(cgImage: CGImage, gridBounds: CGRect) async -> [[Int]] {
-        let imgW  = CGFloat(cgImage.width)
-        let imgH  = CGFloat(cgImage.height)
-        let gx    = gridBounds.minX * imgW
-        let gy    = (1.0 - gridBounds.maxY) * imgH
-        let gw    = gridBounds.width  * imgW
-        let gh    = gridBounds.height * imgH
-        let cellH = gh / 9
-        var matrix = Array(repeating: Array(repeating: 0, count: 9), count: 9)
-
-        for row in 0..<9 {
-            let rect = CGRect(x: gx, y: gy + CGFloat(row) * cellH, width: gw, height: cellH)
-            guard let strip  = cgImage.cropping(to: rect),
-                  let padded = paddedStrip(strip, targetHeight: 80) else { continue }
-            for (digit, nx) in await ocrStrip(padded) {
-                let col = max(0, min(Int(nx * 9), 8))
-                if matrix[row][col] == 0 { matrix[row][col] = digit }
+    /// Returns the first valid 1–9 digit found in the top candidates of an observation.
+    private static func extractBestDigit(from obs: VNRecognizedTextObservation) -> Int {
+        for candidate in obs.topCandidates(3) {
+            let t = candidate.string.trimmingCharacters(in: .whitespaces)
+            // Direct single-character hit.
+            if t.count == 1, let d = Int(t), (1...9).contains(d) { return d }
+            // Multi-character string — try per-character extraction.
+            for ch in t {
+                if let d = Int(String(ch)), (1...9).contains(d) { return d }
             }
         }
-        return matrix
+        return 0
     }
 
-    private static func ocrStrip(_ cgImage: CGImage) async -> [(Int, CGFloat)] {
-        await withCheckedContinuation { (c: CheckedContinuation<[(Int, CGFloat)], Never>) in
-            var result: [(Int, CGFloat)] = []
-            let req = VNRecognizeTextRequest { r, _ in
-                if let obs = r.results as? [VNRecognizedTextObservation] {
-                    for o in obs {
-                        for (d, bbox) in extractDigits(from: o) { result.append((d, bbox.midX)) }
-                    }
-                }
-                c.resume(returning: result)
-            }
-            req.recognitionLevel = .fast
-            req.usesLanguageCorrection = false
-            let h = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-            do { try h.perform([req]) } catch { c.resume(returning: result) }
-        }
-    }
-
-    private static func paddedStrip(_ src: CGImage, targetHeight: CGFloat) -> CGImage? {
-        let scale    = targetHeight / CGFloat(src.height)
-        let scaledW  = CGFloat(src.width) * scale
-        let pad      = targetHeight * 0.25
-        let size     = CGSize(width: scaledW + 2 * pad, height: targetHeight + 2 * pad)
-        return UIGraphicsImageRenderer(size: size).image { ctx in
-            ctx.cgContext.setFillColor(UIColor.white.cgColor)
-            ctx.cgContext.fill(CGRect(origin: .zero, size: size))
-            UIImage(cgImage: src).draw(in: CGRect(x: pad, y: pad, width: scaledW, height: targetHeight))
-        }.cgImage
-    }
-
-    // MARK: - Strategy 3: Cell-by-cell
+    // MARK: - Strategy 2: Cell-by-cell accurate OCR
 
     private static func cellByCellOCR(cgImage: CGImage, gridBounds: CGRect) async -> [[Int]] {
         let imgW  = CGFloat(cgImage.width)
         let imgH  = CGFloat(cgImage.height)
+        // Convert gridBounds from Vision coords (BL-origin) to CGImage coords (TL-origin).
         let gx    = gridBounds.minX * imgW
         let gy    = (1.0 - gridBounds.maxY) * imgH
         let cellW = gridBounds.width  * imgW / 9
@@ -227,23 +173,6 @@ struct SudokuDetector {
             ctx.cgContext.fill(CGRect(origin: .zero, size: s))
             UIImage(cgImage: src).draw(in: CGRect(origin: .zero, size: s))
         }.cgImage
-    }
-
-    private static func extractDigits(from obs: VNRecognizedTextObservation) -> [(Int, CGRect)] {
-        for candidate in obs.topCandidates(2) {
-            let str = candidate.string
-            if str.count == 1, let d = Int(str), (1...9).contains(d) { return [(d, obs.boundingBox)] }
-            var results: [(Int, CGRect)] = []
-            for (i, ch) in str.enumerated() {
-                guard let d = Int(String(ch)), (1...9).contains(d) else { continue }
-                if let range = Range(NSRange(location: i, length: 1), in: str),
-                   let box   = try? candidate.boundingBox(for: range)?.boundingBox {
-                    results.append((d, box))
-                }
-            }
-            if !results.isEmpty { return results }
-        }
-        return []
     }
 }
 
