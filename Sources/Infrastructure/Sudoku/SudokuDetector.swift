@@ -22,18 +22,27 @@ struct SudokuDetector {
     static func detect(in image: UIImage) async throws -> SudokuGrid {
         guard let ciImage = CIImage(image: image) else { throw DetectionError.noGridFound }
         let preprocessed = preprocess(ciImage)
-        let corrected    = await bestGridRegion(preprocessed)
 
-        let context = CIContext()
-        guard let cgGrid = context.createCGImage(corrected, from: corrected.extent) else {
-            throw DetectionError.ocrFailed
+        let context   = CIContext()
+        guard let cgImage = context.createCGImage(preprocessed, from: preprocessed.extent) else {
+            throw DetectionError.noGridFound
         }
 
-        let cells = await recognizeDigits(cgImage: cgGrid)
-        return SudokuGrid(cells: cells)
+        // Find grid bounds in the original image (normalized, Vision bottom-left origin)
+        let gridBounds = await findGridBounds(in: preprocessed)
+
+        // Strategy 1: OCR on the full original image — best quality, uses grid bounds to map cells
+        let matrixFull = await fullImageOCR(cgImage: cgImage, gridBounds: gridBounds)
+        if matrixFull.flatMap({ $0 }).filter({ $0 != 0 }).count >= 5 {
+            return SudokuGrid(cells: matrixFull)
+        }
+
+        // Strategy 2: Extract and upscale each cell from the original image
+        let matrixCell = await cellByCellOCR(cgImage: cgImage, gridBounds: gridBounds)
+        return SudokuGrid(cells: matrixCell)
     }
 
-    // MARK: - Step 0: Preprocess
+    // MARK: - Preprocess
 
     private static func preprocess(_ image: CIImage) -> CIImage {
         image.applyingFilter("CIColorControls", parameters: [
@@ -42,17 +51,15 @@ struct SudokuDetector {
         ])
     }
 
-    // MARK: - Step 1: Find grid region
+    // MARK: - Grid detection
 
-    private static func bestGridRegion(_ image: CIImage) async -> CIImage {
-        if let obs = await detectRectangle(in: image, minSize: 0.2, minConfidence: 0.4, maxObs: 10),
-           isSquarish(obs) {
-            return applyPerspective(to: image, observation: obs)
-        }
+    /// Returns the grid bounding box in Vision normalized coords (origin bottom-left).
+    /// Falls back to a centered 90% crop if nothing is detected.
+    private static func findGridBounds(in image: CIImage) async -> CGRect {
         if let obs = await detectRectangle(in: image, minSize: 0.1, minConfidence: 0.1, maxObs: 20) {
-            return applyPerspective(to: image, observation: obs)
+            return obs.boundingBox
         }
-        return centerSquareCrop(image)
+        return CGRect(x: 0.05, y: 0.05, width: 0.9, height: 0.9)
     }
 
     private static func detectRectangle(
@@ -77,63 +84,25 @@ struct SudokuDetector {
         }
     }
 
-    private static func isSquarish(_ obs: VNRectangleObservation) -> Bool {
-        let r = obs.boundingBox.width / max(obs.boundingBox.height, 0.001)
-        return r > 0.7 && r < 1.3
-    }
+    // MARK: - Strategy 1: Full-image OCR + grid bounds mapping
 
-    private static func applyPerspective(to image: CIImage, observation obs: VNRectangleObservation) -> CIImage {
-        let size = image.extent.size
-        func pt(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x * size.width, y: p.y * size.height) }
-        let filter = CIFilter.perspectiveCorrection()
-        filter.inputImage  = image
-        filter.topLeft     = pt(obs.topLeft)
-        filter.topRight    = pt(obs.topRight)
-        filter.bottomLeft  = pt(obs.bottomLeft)
-        filter.bottomRight = pt(obs.bottomRight)
-        return filter.outputImage ?? image
-    }
-
-    private static func centerSquareCrop(_ image: CIImage) -> CIImage {
-        let ext  = image.extent
-        let side = min(ext.width, ext.height)
-        let x    = ext.minX + (ext.width  - side) / 2
-        let y    = ext.minY + (ext.height - side) / 2
-        return image.cropped(to: CGRect(x: x, y: y, width: side, height: side))
-    }
-
-    // MARK: - Step 2: Digit recognition
-
-    /// Runs full-grid OCR first (faster, better for printed grids).
-    /// Falls back to upscaled cell-by-cell if full-grid yields too few digits.
-    private static func recognizeDigits(cgImage: CGImage) async -> [[Int]] {
-        let matrix = await fullGridOCR(cgImage: cgImage)
-        let found  = matrix.flatMap { $0 }.filter { $0 != 0 }.count
-        if found >= 5 { return matrix }
-        return await cellByCellOCR(cgImage: cgImage)
-    }
-
-    // MARK: Full-grid OCR
-
-    /// One VNRecognizeTextRequest on the whole grid. Maps each digit
-    /// to a cell using the observation's bounding box.
-    /// VNRecognizedTextObservation.boundingBox: normalized, origin bottom-left.
-    private static func fullGridOCR(cgImage: CGImage) async -> [[Int]] {
-        var matrix = Array(repeating: Array(repeating: 0, count: 9), count: 9)
-        return await withCheckedContinuation { continuation in
+    /// Runs OCR on the full-resolution CGImage.
+    /// Each detected digit is mapped to a cell using its position relative to gridBounds.
+    /// gridBounds uses Vision normalized coords: origin bottom-left, Y increases upward.
+    private static func fullImageOCR(cgImage: CGImage, gridBounds: CGRect) async -> [[Int]] {
+        await withCheckedContinuation { (continuation: CheckedContinuation<[[Int]], Never>) in
+            var matrix = Array(repeating: Array(repeating: 0, count: 9), count: 9)
             let request = VNRecognizeTextRequest { req, _ in
-                guard let observations = req.results as? [VNRecognizedTextObservation] else {
-                    continuation.resume(returning: matrix)
-                    return
-                }
-                for obs in observations {
-                    let digits = extractDigits(from: obs)
-                    for (digit, bbox) in digits {
-                        // bbox origin is bottom-left normalized → flip Y for top-down row
-                        let col = min(Int(bbox.midX * 9), 8)
-                        let row = min(Int((1 - bbox.midY) * 9), 8)
-                        guard (0..<9).contains(row), (0..<9).contains(col) else { continue }
-                        matrix[row][col] = digit
+                if let observations = req.results as? [VNRecognizedTextObservation] {
+                    for obs in observations {
+                        for (digit, bbox) in extractDigits(from: obs) {
+                            guard gridBounds.contains(CGPoint(x: bbox.midX, y: bbox.midY)) else { continue }
+                            let relX = (bbox.midX - gridBounds.minX) / gridBounds.width
+                            let relY = (bbox.midY - gridBounds.minY) / gridBounds.height
+                            let col  = max(0, min(Int(relX * 9), 8))
+                            let row  = max(0, min(8 - Int(relY * 9), 8))
+                            matrix[row][col] = digit
+                        }
                     }
                 }
                 continuation.resume(returning: matrix)
@@ -142,57 +111,43 @@ struct SudokuDetector {
             request.usesLanguageCorrection = false
             request.customWords            = ["1","2","3","4","5","6","7","8","9"]
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            try? handler.perform([request])
+            do {
+                try handler.perform([request])
+            } catch {
+                continuation.resume(returning: matrix)
+            }
         }
     }
 
-    /// Extract (digit, normalizedBoundingBox) pairs from a text observation.
-    /// Handles both single-char ("5") and multi-char ("1 2 3") observations.
-    private static func extractDigits(from obs: VNRecognizedTextObservation) -> [(Int, CGRect)] {
-        var results: [(Int, CGRect)] = []
-        for candidate in obs.topCandidates(2) {
-            let str = candidate.string
-            // Single digit — use the observation bbox directly
-            if str.count == 1, let d = Int(str), (1...9).contains(d) {
-                results.append((d, obs.boundingBox))
-                break
-            }
-            // Multiple chars: try to get per-character range bboxes
-            for (i, char) in str.enumerated() {
-                guard let d = Int(String(char)), (1...9).contains(d) else { continue }
-                if let range = Range(NSRange(location: i, length: 1), in: str),
-                   let charBox = try? candidate.boundingBox(for: range)?.boundingBox {
-                    results.append((d, charBox))
-                }
-            }
-            if !results.isEmpty { break }
-        }
-        return results
-    }
+    // MARK: - Strategy 2: Cell-by-cell on original image, upscaled
 
-    // MARK: Cell-by-cell OCR (fallback)
+    /// Extracts each of the 81 cells directly from the original CGImage using gridBounds,
+    /// scales each cell to 200×200 px, then runs per-cell OCR.
+    private static func cellByCellOCR(cgImage: CGImage, gridBounds: CGRect) async -> [[Int]] {
+        let imgW = CGFloat(cgImage.width)
+        let imgH = CGFloat(cgImage.height)
 
-    /// Divides the grid CGImage into 81 cells, scales each up to ~150px,
-    /// and runs OCR individually.
-    private static func cellByCellOCR(cgImage: CGImage) async -> [[Int]] {
-        let w     = CGFloat(cgImage.width)
-        let h     = CGFloat(cgImage.height)
-        let cellW = w / 9
-        let cellH = h / 9
-        let inset = max(cellW, cellH) * 0.08   // tighter inset when upscaling
+        // Convert gridBounds (Vision normalized, bottom-left) → CGImage coords (top-left)
+        let gx = gridBounds.minX * imgW
+        let gy = (1 - gridBounds.maxY) * imgH   // flip Y for CGImage top-left origin
+        let gw = gridBounds.width  * imgW
+        let gh = gridBounds.height * imgH
+
+        let cellW = gw / 9
+        let cellH = gh / 9
+        let inset = min(cellW, cellH) * 0.08
 
         var matrix = Array(repeating: Array(repeating: 0, count: 9), count: 9)
         for row in 0..<9 {
             for col in 0..<9 {
-                // CGImage origin is top-left → row 0 at y=0 (no flip needed)
                 let rect = CGRect(
-                    x: CGFloat(col) * cellW + inset,
-                    y: CGFloat(row) * cellH + inset,
+                    x: gx + CGFloat(col) * cellW + inset,
+                    y: gy + CGFloat(row) * cellH + inset,
                     width:  cellW - 2 * inset,
                     height: cellH - 2 * inset
                 )
-                guard let cell = cgImage.cropping(to: rect),
-                      let scaled = upscale(cell, to: 150) else { continue }
+                guard let cell   = cgImage.cropping(to: rect),
+                      let scaled = upscale(cell, to: 200) else { continue }
                 matrix[row][col] = await ocrSingleCell(cgImage: scaled)
             }
         }
@@ -201,7 +156,10 @@ struct SudokuDetector {
 
     private static func upscale(_ source: CGImage, to size: Int) -> CGImage? {
         let s = CGSize(width: size, height: size)
-        return UIGraphicsImageRenderer(size: s).image { _ in
+        return UIGraphicsImageRenderer(size: s).image { ctx in
+            // White background then draw cell (helps with dark-background Sudoku apps)
+            ctx.cgContext.setFillColor(UIColor.white.cgColor)
+            ctx.cgContext.fill(CGRect(origin: .zero, size: s))
             UIImage(cgImage: source).draw(in: CGRect(origin: .zero, size: s))
         }.cgImage
     }
@@ -211,8 +169,8 @@ struct SudokuDetector {
             let request = VNRecognizeTextRequest { req, _ in
                 let digit = (req.results as? [VNRecognizedTextObservation])?
                     .compactMap { obs -> Int? in
-                        for candidate in obs.topCandidates(3) {
-                            let t = candidate.string.trimmingCharacters(in: .whitespaces)
+                        for c in obs.topCandidates(3) {
+                            let t = c.string.trimmingCharacters(in: .whitespaces)
                             if t.count == 1, let d = Int(t), (1...9).contains(d) { return d }
                         }
                         return nil
@@ -226,5 +184,29 @@ struct SudokuDetector {
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             try? handler.perform([request])
         }
+    }
+
+    // MARK: - Digit extraction helpers
+
+    /// Extracts (digit, boundingBox) pairs from a VNRecognizedTextObservation.
+    /// Handles both single-char ("5") and multi-char ("1 2") observations.
+    private static func extractDigits(from obs: VNRecognizedTextObservation) -> [(Int, CGRect)] {
+        for candidate in obs.topCandidates(2) {
+            let str = candidate.string
+            var results: [(Int, CGRect)] = []
+
+            if str.count == 1, let d = Int(str), (1...9).contains(d) {
+                return [(d, obs.boundingBox)]
+            }
+            for (i, ch) in str.enumerated() {
+                guard let d = Int(String(ch)), (1...9).contains(d) else { continue }
+                if let range = Range(NSRange(location: i, length: 1), in: str),
+                   let box   = try? candidate.boundingBox(for: range)?.boundingBox {
+                    results.append((d, box))
+                }
+            }
+            if !results.isEmpty { return results }
+        }
+        return []
     }
 }
