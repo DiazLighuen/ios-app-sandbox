@@ -21,7 +21,7 @@ struct SudokuScannerView: View {
             VStack(spacing: 8) {
                 Text("Escanear Sudoku")
                     .font(.title2.weight(.semibold))
-                Text("Usá la cámara o elegí una captura de pantalla")
+                Text("Usá la cámara o elegí una imagen de la galería")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -40,7 +40,7 @@ struct SudokuScannerView: View {
                 }
                 .buttonStyle(.plain)
 
-                PhotosPicker(selection: $pickerItem, matching: .screenshots) {
+                PhotosPicker(selection: $pickerItem, matching: .images) {
                     Label("Galería", systemImage: "photo.on.rectangle")
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: 260)
