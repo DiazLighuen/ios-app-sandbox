@@ -20,55 +20,36 @@ struct SudokuDetector {
     // MARK: - Public
 
     static func detect(in image: UIImage) async throws -> SudokuGrid {
-        guard let ciImage = CIImage(image: image) else { throw DetectionError.noGridFound }
-        let preprocessed = preprocess(ciImage)
+        // Ensure orientation is .up so all downstream CGImage operations are correct
+        let img = image.normalizedOrientation
+        guard let cgImage = img.cgImage else { throw DetectionError.noGridFound }
 
-        let context   = CIContext()
-        guard let cgImage = context.createCGImage(preprocessed, from: preprocessed.extent) else {
-            throw DetectionError.noGridFound
+        // Detect grid bounds in the image (normalized Vision coords, origin bottom-left)
+        let gridBounds = await findGridBounds(cgImage: cgImage)
+
+        // Strategy 1: row-by-row OCR — most reliable for isolated digits in a grid
+        let rowMatrix = await rowByRowOCR(cgImage: cgImage, gridBounds: gridBounds)
+        if rowMatrix.flatMap({ $0 }).filter({ $0 != 0 }).count >= 5 {
+            return SudokuGrid(cells: rowMatrix)
         }
 
-        // Find grid bounds in the original image (normalized, Vision bottom-left origin)
-        let gridBounds = await findGridBounds(in: preprocessed)
-
-        // Strategy 1: OCR on the full original image — best quality, uses grid bounds to map cells
-        let matrixFull = await fullImageOCR(cgImage: cgImage, gridBounds: gridBounds)
-        if matrixFull.flatMap({ $0 }).filter({ $0 != 0 }).count >= 5 {
-            return SudokuGrid(cells: matrixFull)
-        }
-
-        // Strategy 2: Extract and upscale each cell from the original image
-        let matrixCell = await cellByCellOCR(cgImage: cgImage, gridBounds: gridBounds)
-        return SudokuGrid(cells: matrixCell)
-    }
-
-    // MARK: - Preprocess
-
-    private static func preprocess(_ image: CIImage) -> CIImage {
-        image.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: 0,
-            kCIInputContrastKey: 1.3
-        ])
+        // Strategy 2: cell-by-cell with aggressive upscaling
+        let cellMatrix = await cellByCellOCR(cgImage: cgImage, gridBounds: gridBounds)
+        return SudokuGrid(cells: cellMatrix)
     }
 
     // MARK: - Grid detection
 
-    /// Returns the grid bounding box in Vision normalized coords (origin bottom-left).
-    /// Falls back to a centered 90% crop if nothing is detected.
-    private static func findGridBounds(in image: CIImage) async -> CGRect {
-        if let obs = await detectRectangle(in: image, minSize: 0.1, minConfidence: 0.1, maxObs: 20) {
+    private static func findGridBounds(cgImage: CGImage) async -> CGRect {
+        let ciImage = CIImage(cgImage: cgImage)
+        if let obs = await detectLargestRectangle(in: ciImage) {
             return obs.boundingBox
         }
-        return CGRect(x: 0.05, y: 0.05, width: 0.9, height: 0.9)
+        return CGRect(x: 0.05, y: 0.05, width: 0.90, height: 0.90)
     }
 
-    private static func detectRectangle(
-        in image: CIImage,
-        minSize: Float,
-        minConfidence: Float,
-        maxObs: Int
-    ) async -> VNRectangleObservation? {
-        await withCheckedContinuation { continuation in
+    private static func detectLargestRectangle(in image: CIImage) async -> VNRectangleObservation? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<VNRectangleObservation?, Never>) in
             let request = VNDetectRectanglesRequest { req, _ in
                 let best = (req.results as? [VNRectangleObservation])?
                     .max { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height }
@@ -76,63 +57,98 @@ struct SudokuDetector {
             }
             request.minimumAspectRatio  = 0.6
             request.maximumAspectRatio  = 1.4
-            request.minimumSize         = minSize
-            request.maximumObservations = maxObs
-            request.minimumConfidence   = minConfidence
+            request.minimumSize         = 0.1
+            request.maximumObservations = 20
+            request.minimumConfidence   = 0.1
             let handler = VNImageRequestHandler(ciImage: image, options: [:])
-            try? handler.perform([request])
+            do    { try handler.perform([request]) }
+            catch { continuation.resume(returning: nil) }
         }
     }
 
-    // MARK: - Strategy 1: Full-image OCR + grid bounds mapping
+    // MARK: - Strategy 1: Row-by-row OCR
 
-    /// Runs OCR on the full-resolution CGImage.
-    /// Each detected digit is mapped to a cell using its position relative to gridBounds.
-    /// gridBounds uses Vision normalized coords: origin bottom-left, Y increases upward.
-    private static func fullImageOCR(cgImage: CGImage, gridBounds: CGRect) async -> [[Int]] {
-        await withCheckedContinuation { (continuation: CheckedContinuation<[[Int]], Never>) in
-            var matrix = Array(repeating: Array(repeating: 0, count: 9), count: 9)
+    /// Extracts 9 horizontal strips (one per Sudoku row), pads & upscales them,
+    /// then runs .fast OCR. Maps each digit's X position to a column.
+    private static func rowByRowOCR(cgImage: CGImage, gridBounds: CGRect) async -> [[Int]] {
+        let imgW  = CGFloat(cgImage.width)
+        let imgH  = CGFloat(cgImage.height)
+
+        // Convert gridBounds (Vision normalized, bottom-left) → CGImage coords (top-left)
+        let gx = gridBounds.minX * imgW
+        let gy = (1.0 - gridBounds.maxY) * imgH
+        let gw = gridBounds.width  * imgW
+        let gh = gridBounds.height * imgH
+        let cellH = gh / 9
+
+        var matrix = Array(repeating: Array(repeating: 0, count: 9), count: 9)
+
+        for row in 0..<9 {
+            let stripRect = CGRect(
+                x: gx,
+                y: gy + CGFloat(row) * cellH,
+                width: gw,
+                height: cellH
+            )
+            guard let strip  = cgImage.cropping(to: stripRect),
+                  let padded = paddedStrip(strip, targetHeight: 80) else { continue }
+
+            let hits = await ocrStrip(cgImage: padded)
+            for (digit, normX) in hits {
+                let col = max(0, min(Int(normX * 9), 8))
+                if matrix[row][col] == 0 { matrix[row][col] = digit }
+            }
+        }
+        return matrix
+    }
+
+    /// Returns (digit, normalizedX) pairs where normalizedX ∈ [0,1] within the strip.
+    private static func ocrStrip(cgImage: CGImage) async -> [(Int, CGFloat)] {
+        await withCheckedContinuation { (continuation: CheckedContinuation<[(Int, CGFloat)], Never>) in
+            var result: [(Int, CGFloat)] = []
             let request = VNRecognizeTextRequest { req, _ in
                 if let observations = req.results as? [VNRecognizedTextObservation] {
                     for obs in observations {
                         for (digit, bbox) in extractDigits(from: obs) {
-                            guard gridBounds.contains(CGPoint(x: bbox.midX, y: bbox.midY)) else { continue }
-                            let relX = (bbox.midX - gridBounds.minX) / gridBounds.width
-                            let relY = (bbox.midY - gridBounds.minY) / gridBounds.height
-                            let col  = max(0, min(Int(relX * 9), 8))
-                            let row  = max(0, min(8 - Int(relY * 9), 8))
-                            matrix[row][col] = digit
+                            result.append((digit, bbox.midX))
                         }
                     }
                 }
-                continuation.resume(returning: matrix)
+                continuation.resume(returning: result)
             }
-            request.recognitionLevel       = .accurate
+            // .fast avoids complex layout analysis — better for rows of isolated chars
+            request.recognitionLevel       = .fast
             request.usesLanguageCorrection = false
-            request.customWords            = ["1","2","3","4","5","6","7","8","9"]
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            do {
-                try handler.perform([request])
-            } catch {
-                continuation.resume(returning: matrix)
-            }
+            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+            do    { try handler.perform([request]) }
+            catch { continuation.resume(returning: result) }
         }
     }
 
-    // MARK: - Strategy 2: Cell-by-cell on original image, upscaled
+    /// Scales the strip to `targetHeight` pixels tall and adds white padding on all sides.
+    private static func paddedStrip(_ source: CGImage, targetHeight: CGFloat) -> CGImage? {
+        let scale    = targetHeight / CGFloat(source.height)
+        let scaledW  = CGFloat(source.width) * scale
+        let padding  = targetHeight * 0.25
+        let finalSize = CGSize(width: scaledW + 2 * padding, height: targetHeight + 2 * padding)
 
-    /// Extracts each of the 81 cells directly from the original CGImage using gridBounds,
-    /// scales each cell to 200×200 px, then runs per-cell OCR.
+        return UIGraphicsImageRenderer(size: finalSize).image { ctx in
+            ctx.cgContext.setFillColor(UIColor.white.cgColor)
+            ctx.cgContext.fill(CGRect(origin: .zero, size: finalSize))
+            UIImage(cgImage: source).draw(in: CGRect(x: padding, y: padding,
+                                                     width: scaledW, height: targetHeight))
+        }.cgImage
+    }
+
+    // MARK: - Strategy 2: Cell-by-cell upscaled OCR
+
     private static func cellByCellOCR(cgImage: CGImage, gridBounds: CGRect) async -> [[Int]] {
         let imgW = CGFloat(cgImage.width)
         let imgH = CGFloat(cgImage.height)
-
-        // Convert gridBounds (Vision normalized, bottom-left) → CGImage coords (top-left)
-        let gx = gridBounds.minX * imgW
-        let gy = (1 - gridBounds.maxY) * imgH   // flip Y for CGImage top-left origin
-        let gw = gridBounds.width  * imgW
-        let gh = gridBounds.height * imgH
-
+        let gx   = gridBounds.minX * imgW
+        let gy   = (1.0 - gridBounds.maxY) * imgH
+        let gw   = gridBounds.width  * imgW
+        let gh   = gridBounds.height * imgH
         let cellW = gw / 9
         let cellH = gh / 9
         let inset = min(cellW, cellH) * 0.08
@@ -147,25 +163,24 @@ struct SudokuDetector {
                     height: cellH - 2 * inset
                 )
                 guard let cell   = cgImage.cropping(to: rect),
-                      let scaled = upscale(cell, to: 200) else { continue }
-                matrix[row][col] = await ocrSingleCell(cgImage: scaled)
+                      let scaled = upscaledCell(cell, size: 200) else { continue }
+                matrix[row][col] = await ocrSingleCell(scaled)
             }
         }
         return matrix
     }
 
-    private static func upscale(_ source: CGImage, to size: Int) -> CGImage? {
+    private static func upscaledCell(_ source: CGImage, size: Int) -> CGImage? {
         let s = CGSize(width: size, height: size)
         return UIGraphicsImageRenderer(size: s).image { ctx in
-            // White background then draw cell (helps with dark-background Sudoku apps)
             ctx.cgContext.setFillColor(UIColor.white.cgColor)
             ctx.cgContext.fill(CGRect(origin: .zero, size: s))
             UIImage(cgImage: source).draw(in: CGRect(origin: .zero, size: s))
         }.cgImage
     }
 
-    private static func ocrSingleCell(cgImage: CGImage) async -> Int {
-        await withCheckedContinuation { continuation in
+    private static func ocrSingleCell(_ cgImage: CGImage) async -> Int {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Int, Never>) in
             let request = VNRecognizeTextRequest { req, _ in
                 let digit = (req.results as? [VNRecognizedTextObservation])?
                     .compactMap { obs -> Int? in
@@ -174,30 +189,26 @@ struct SudokuDetector {
                             if t.count == 1, let d = Int(t), (1...9).contains(d) { return d }
                         }
                         return nil
-                    }
-                    .first ?? 0
+                    }.first ?? 0
                 continuation.resume(returning: digit)
             }
             request.recognitionLevel       = .accurate
             request.usesLanguageCorrection = false
-            request.customWords            = ["1","2","3","4","5","6","7","8","9"]
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            try? handler.perform([request])
+            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+            do    { try handler.perform([request]) }
+            catch { continuation.resume(returning: 0) }
         }
     }
 
-    // MARK: - Digit extraction helpers
+    // MARK: - Digit extraction
 
-    /// Extracts (digit, boundingBox) pairs from a VNRecognizedTextObservation.
-    /// Handles both single-char ("5") and multi-char ("1 2") observations.
     private static func extractDigits(from obs: VNRecognizedTextObservation) -> [(Int, CGRect)] {
         for candidate in obs.topCandidates(2) {
             let str = candidate.string
-            var results: [(Int, CGRect)] = []
-
             if str.count == 1, let d = Int(str), (1...9).contains(d) {
                 return [(d, obs.boundingBox)]
             }
+            var results: [(Int, CGRect)] = []
             for (i, ch) in str.enumerated() {
                 guard let d = Int(String(ch)), (1...9).contains(d) else { continue }
                 if let range = Range(NSRange(location: i, length: 1), in: str),
@@ -208,5 +219,18 @@ struct SudokuDetector {
             if !results.isEmpty { return results }
         }
         return []
+    }
+}
+
+// MARK: - UIImage orientation normalization
+
+private extension UIImage {
+    /// Returns a copy drawn upright (orientation == .up).
+    var normalizedOrientation: UIImage {
+        guard imageOrientation != .up else { return self }
+        UIGraphicsBeginImageContextWithOptions(size, false, scale)
+        defer { UIGraphicsEndImageContext() }
+        draw(in: CGRect(origin: .zero, size: size))
+        return UIGraphicsGetImageFromCurrentImageContext() ?? self
     }
 }
