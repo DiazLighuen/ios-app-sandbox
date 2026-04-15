@@ -182,6 +182,21 @@ struct SudokuDetector {
     // MARK: - Single digit recognition
 
     private static func recognizeSingleDigit(_ cgImage: CGImage) async -> Int {
+        // First attempt: 300 px upscale.
+        if let scaled300 = upscaled(cgImage, to: 300) {
+            let d = await ocrCell(scaled300)
+            if d != 0 { return d }
+        }
+        // Second attempt: 500 px — helps when the digit is thin or low-contrast.
+        if let scaled500 = upscaled(cgImage, to: 500) {
+            let d = await ocrCell(scaled500)
+            if d != 0 { return d }
+        }
+        // Third attempt: original size, no upscaling.
+        return await ocrCell(cgImage)
+    }
+
+    private static func ocrCell(_ cgImage: CGImage) async -> Int {
         await withCheckedContinuation { (c: CheckedContinuation<Int, Never>) in
             let req = VNRecognizeTextRequest { r, _ in
                 let digit = (r.results as? [VNRecognizedTextObservation])?
@@ -199,6 +214,8 @@ struct SudokuDetector {
             }
             req.recognitionLevel       = .accurate
             req.usesLanguageCorrection = false
+            req.customWords            = ["1","2","3","4","5","6","7","8","9"]
+            req.recognitionLanguages   = ["en-US"]
             let h = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
             do { try h.perform([req]) } catch { c.resume(returning: 0) }
         }
