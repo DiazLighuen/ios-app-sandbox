@@ -119,13 +119,15 @@ final class SudokuViewModel: ObservableObject {
     }
 
     func solve() {
-        guard let merged = mergedGrid else { return }
+        guard let original = originalGrid else { return }
         errorCells = []
-        if let solution = SudokuSolver.solve(merged) {
+        // Solve from the original clues only — ignores user entries so that
+        // wrong user values never make a valid puzzle appear unsolvable.
+        if let solution = SudokuSolver.solve(original) {
             solvedGrid  = solution
             displayMode = .playing
         } else {
-            detectionError = "El Sudoku no tiene solución. Revisá los valores ingresados."
+            detectionError = "El Sudoku no tiene solución. Revisá los valores en la pestaña Original."
         }
     }
 

@@ -41,15 +41,19 @@ private struct SudokuWorkspaceView: View {
             SudokuGridView(viewModel: viewModel)
                 .padding(.horizontal, 12)
 
-            // Number picker (only in edit mode with a selected cell)
-            if viewModel.isEditingMode, let selected = viewModel.selectedCell {
-                NumberPickerView { value in
-                    viewModel.setCell(selected, value: value)
+            // Number picker — space is always reserved (fixed height) so the
+            // grid above never resizes when the picker appears or disappears.
+            ZStack {
+                if viewModel.isEditingMode, let selected = viewModel.selectedCell {
+                    NumberPickerView { value in
+                        viewModel.setCell(selected, value: value)
+                    }
+                    .transition(.opacity)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            .frame(height: 96)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
 
             Spacer(minLength: 0)
 
