@@ -36,9 +36,14 @@ struct SudokuDetector {
         let (s1, derivedBounds) = await fullGridOCR(cgImage: cgImage)
 
         // Strategy 2 — cell-by-cell OCR only for cells S1 left empty.
-        // Both strategies are always merged so they complement each other.
+        // For S2 we want the LARGEST plausible grid bounds, so we union
+        // the digit-derived bounds with the rectangle-detector result.
+        // This covers edge columns/rows that S1 missed (derivedBounds would
+        // be too narrow) while still benefiting from digit-position data
+        // when the rectangle detector fires a false positive.
         let rectBounds = await findGridBoundsFromRectDetect(cgImage: cgImage)
-        let gridBounds = derivedBounds ?? rectBounds ?? CGRect(x: 0.02, y: 0.02, width: 0.96, height: 0.96)
+        let baseBounds = derivedBounds ?? CGRect(x: 0.02, y: 0.02, width: 0.96, height: 0.96)
+        let gridBounds = rectBounds.map { baseBounds.union($0) } ?? baseBounds
 
         let emptyCells: [(Int, Int)] = (0..<9).flatMap { r in
             (0..<9).compactMap { c in s1[r][c] == 0 ? (r, c) : nil }
@@ -79,9 +84,11 @@ struct SudokuDetector {
         let spanY = maxY - minY
 
         // Half-cell padding: the outermost digits are centred inside their cells,
-        // not at the grid edges. Assuming the span covers ≤8 column gaps → cellW ≈ spanX/8.
-        let halfCellX = max(spanX / 16, 0.01)
-        let halfCellY = max(spanY / 16, 0.01)
+        // not at the grid edges.  Using spanX/8 (conservative) instead of
+        // spanX/16 (ideal for 9 cols) ensures the bounds still reach the real
+        // grid edge when one or both extreme columns have no detected digit.
+        let halfCellX = max(spanX / 8, 0.02)
+        let halfCellY = max(spanY / 8, 0.02)
 
         let derivedBounds = CGRect(
             x: max(0, minX - halfCellX),
