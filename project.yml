@@ -26,6 +26,27 @@ packages:
     url: https://github.com/google/GoogleSignIn-iOS
     from: "8.0.0"
 
+schemes:
+  SandboxApp:
+    build:
+      targets:
+        SandboxApp: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    archive:
+      config: Release
+
+  SandboxApp (Release):
+    build:
+      targets:
+        SandboxApp: all
+    run:
+      config: Release
+    archive:
+      config: Release
+
 targets:
   SandboxApp:
     type: application
