@@ -45,7 +45,7 @@ struct LoginView: View {
         defer { isPinging = false }
         let start = Date()
         do {
-            let url = URL(string: "http://localhost:8080")!
+            let url = HTTPClient.shared.baseURL
             let (_, response) = try await URLSession.shared.data(from: url)
             let ms = Int(Date().timeIntervalSince(start) * 1000)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -75,7 +75,7 @@ private struct PingButton: View {
                     } else {
                         Image(systemName: "network")
                     }
-                    Text(isPinging ? "Probando..." : "Probar localhost:8080")
+                    Text(isPinging ? "Probando..." : "Probar \(AppConfig.apiHost)")
                 }
                 .frame(maxWidth: .infinity)
             }
