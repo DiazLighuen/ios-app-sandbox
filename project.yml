@@ -11,8 +11,8 @@ options:
     - de
 
 configFiles:
-  Debug: Config.xcconfig
-  Release: Config.xcconfig
+  Debug: Config.Debug.xcconfig
+  Release: Config.Release.xcconfig
 
 settings:
   base:

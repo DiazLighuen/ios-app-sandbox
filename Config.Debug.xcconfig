@@ -1,0 +1,5 @@
+// Debug — local backend (simulator / development device on LAN)
+// Config.xcconfig is gitignored and holds DEVELOPMENT_TEAM + any private overrides.
+#include "Config.xcconfig"
+
+API_BASE_HOST = localhost
