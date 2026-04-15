@@ -26,9 +26,8 @@ struct SudokuGridView: View {
             ForEach(0..<9, id: \.self) { row in
                 HStack(spacing: 0) {
                     ForEach(0..<9, id: \.self) { col in
-                        let pos = GridPosition(row: row, col: col)
                         SudokuCellView(
-                            pos: pos,
+                            pos: GridPosition(row: row, col: col),
                             viewModel: viewModel,
                             cellSize: cellSize
                         )
@@ -42,21 +41,20 @@ struct SudokuGridView: View {
 
     private func gridLines(size: CGFloat, cellSize: CGFloat) -> some View {
         Canvas { ctx, _ in
-            // Thin lines for cells
             for i in 0...9 {
                 let pos = CGFloat(i) * cellSize
                 let isBold = i % 3 == 0
 
-                var linePath = Path()
-                linePath.move(to: CGPoint(x: pos, y: 0))
-                linePath.addLine(to: CGPoint(x: pos, y: size))
-                ctx.stroke(linePath, with: .color(isBold ? .primary : .secondary.opacity(0.4)),
+                var col = Path()
+                col.move(to: CGPoint(x: pos, y: 0))
+                col.addLine(to: CGPoint(x: pos, y: size))
+                ctx.stroke(col, with: .color(isBold ? .primary : .secondary.opacity(0.4)),
                            lineWidth: isBold ? 2 : 0.5)
 
-                var rowPath = Path()
-                rowPath.move(to: CGPoint(x: 0, y: pos))
-                rowPath.addLine(to: CGPoint(x: size, y: pos))
-                ctx.stroke(rowPath, with: .color(isBold ? .primary : .secondary.opacity(0.4)),
+                var row = Path()
+                row.move(to: CGPoint(x: 0, y: pos))
+                row.addLine(to: CGPoint(x: size, y: pos))
+                ctx.stroke(row, with: .color(isBold ? .primary : .secondary.opacity(0.4)),
                            lineWidth: isBold ? 2 : 0.5)
             }
         }
@@ -75,36 +73,44 @@ struct SudokuCellView: View {
         viewModel.displayedGrid?[pos.row, pos.col] ?? 0
     }
 
+    /// Came from OCR — bold in both modes.
     private var isOriginal: Bool {
-        viewModel.originalGrid?[pos.row, pos.col] != 0
+        viewModel.isOriginalCell(pos)
     }
 
-    /// A cell is "solved" (shown in blue) only if it was empty in currentGrid
-    /// (the state at solve-time) but has a value in solvedGrid.
+    /// User-entered cell that the solver filled in (shown in blue).
     private var isSolvedCell: Bool {
-        viewModel.displayMode == .solved &&
-        (viewModel.currentGrid?[pos.row, pos.col] ?? 0) == 0 &&
+        viewModel.displayMode == .playing &&
+        viewModel.solvedGrid != nil &&
+        (viewModel.mergedGrid?[pos.row, pos.col] ?? 0) == 0 &&
         value != 0
     }
 
     private var isError: Bool {
-        viewModel.displayMode == .errors && viewModel.errorCells.contains(pos)
+        viewModel.errorCells.contains(pos)
     }
 
     private var isSelected: Bool {
         viewModel.selectedCell == pos
     }
 
+    /// In playing mode, original cells are not tappable — dim the selection hint.
+    private var isNonEditable: Bool {
+        viewModel.displayMode == .playing && isOriginal
+    }
+
     private var cellBackground: Color {
-        if isSelected     { return Color.blue.opacity(0.25) }
-        if isError        { return Color.red.opacity(0.15) }
+        if isSelected    { return Color.blue.opacity(0.25) }
+        if isError       { return Color.red.opacity(0.15) }
         return Color.clear
     }
 
     private var textColor: Color {
-        if isError        { return .red }
-        if isSolvedCell   { return .blue }
-        return .primary
+        if isError       { return .red }
+        if isSolvedCell  { return .blue }
+        if isOriginal    { return .primary }
+        // User-entered answers shown in a slightly subdued color.
+        return .primary.opacity(0.75)
     }
 
     var body: some View {
@@ -115,7 +121,11 @@ struct SudokuCellView: View {
 
             if value != 0 {
                 Text("\(value)")
-                    .font(.system(size: cellSize * 0.48, weight: isOriginal ? .semibold : .regular, design: .rounded))
+                    .font(.system(
+                        size: cellSize * 0.48,
+                        weight: isOriginal ? .semibold : .regular,
+                        design: .rounded
+                    ))
                     .foregroundStyle(textColor)
                     .animation(.easeInOut(duration: 0.15), value: textColor)
             }
