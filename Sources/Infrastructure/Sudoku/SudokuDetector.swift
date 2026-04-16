@@ -60,6 +60,30 @@ struct SudokuDetector {
         return SudokuGrid(cells: merged)
     }
 
+    // MARK: - Public bounds detection (used by crop UI)
+
+    /// Fast pre-scan: returns the best grid bounding rect in Vision coordinates
+    /// (origin bottom-left, values 0–1). Combines digit-position clustering with
+    /// rectangle detection. Returns nil when nothing plausible is found.
+    static func findGridBounds(in image: UIImage) async -> CGRect? {
+        let img = image.normalizedOrientation
+        guard let cgImage = img.cgImage else { return nil }
+
+        // Run both strategies concurrently.
+        async let digitBoundsResult = fullGridOCR(cgImage: cgImage)
+        async let rectBoundsResult  = findGridBoundsFromRectDetect(cgImage: cgImage)
+
+        let (_, digitBounds) = await digitBoundsResult
+        let rectBounds        = await rectBoundsResult
+
+        switch (digitBounds, rectBounds) {
+        case let (d?, r?): return d.union(r)
+        case let (d?, _):  return d
+        case let (_, r?):  return r
+        case _:            return nil
+        }
+    }
+
     // MARK: - Strategy 1: Full-image accurate OCR + spatial clustering
 
     private static func fullGridOCR(cgImage: CGImage) async -> ([[Int]], CGRect?) {
@@ -246,7 +270,7 @@ struct SudokuDetector {
 
 // MARK: - UIImage orientation
 
-private extension UIImage {
+extension UIImage {
     var normalizedOrientation: UIImage {
         guard imageOrientation != .up else { return self }
         UIGraphicsBeginImageContextWithOptions(size, false, scale)

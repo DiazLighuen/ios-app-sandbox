@@ -9,6 +9,8 @@ struct SudokuScannerView: View {
     @State private var showCamera  = false
     @State private var showPicker  = false
     @State private var pickerItem: PhotosPickerItem?
+    /// Image waiting to be cropped before OCR.
+    @State private var imageToCrop: UIImage?
 
     var body: some View {
         VStack(spacing: 32) {
@@ -55,20 +57,36 @@ struct SudokuScannerView: View {
             Spacer()
         }
         .padding(.horizontal, 32)
+        // Camera
         .fullScreenCover(isPresented: $showCamera) {
             CameraCaptureView { image in
                 showCamera = false
-                Task { await viewModel.processImage(image) }
+                imageToCrop = image
             }
         }
+        // Gallery
         .onChange(of: pickerItem) { _, item in
             guard let item else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self),
+                if let data  = try? await item.loadTransferable(type: Data.self),
                    let image = UIImage(data: data) {
-                    await viewModel.processImage(image)
+                    imageToCrop = image
                 }
                 pickerItem = nil
+            }
+        }
+        // Crop step — shown for both camera and gallery
+        .fullScreenCover(isPresented: Binding(
+            get: { imageToCrop != nil },
+            set: { if !$0 { imageToCrop = nil } }
+        )) {
+            if let img = imageToCrop {
+                SudokuCropView(image: img) { cropped in
+                    imageToCrop = nil
+                    Task { await viewModel.processImage(cropped) }
+                } onCancel: {
+                    imageToCrop = nil
+                }
             }
         }
         .overlay {
