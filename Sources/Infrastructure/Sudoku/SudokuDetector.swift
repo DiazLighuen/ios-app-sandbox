@@ -14,14 +14,19 @@ struct SudokuDetector {
     // This map converts the most common confusions back to the correct digit.
     private static let ocrConfusions: [Character: Int] = [
         // Digit   Confused as
-        "Z": 2, "z": 2,            // 2 ↔ Z
-        "S": 5, "s": 5,            // 5 ↔ S
-        "b": 6,                    // 6 ↔ b
-        "G": 6,                    // 6 ↔ G
-        "g": 9, "q": 9,            // 9 ↔ g / q
-        "l": 1, "I": 1, "|": 1,   // 1 ↔ l / I
-        "B": 8,                    // 8 ↔ B
-        "A": 4,                    // 4 ↔ A (rare but happens)
+        "Z": 2, "z": 2,                    // 2 ↔ Z
+        "S": 5, "s": 5,                    // 5 ↔ S
+        "b": 6, "G": 6,                    // 6 ↔ b / G
+        "g": 9,                            // 9 ↔ g
+        // "q" removed — q looks more like 6 (open tail bottom-left) than 9.
+        // Keeping it as 9 was causing 6→9 misclassification.
+        "q": 6,                            // 6 ↔ q  (open bottom-left, like 6)
+        "l": 1, "I": 1, "|": 1, "i": 1,  // 1 ↔ l / I / |  / i
+        "B": 8, "ß": 8,                    // 8 ↔ B / ß
+        "A": 4,                            // 4 ↔ A (rare but happens)
+        "З": 3, "з": 3,                    // 3 ↔ Cyrillic Ze (identical glyph)
+        "Э": 3, "э": 3,                    // 3 ↔ Cyrillic E-reverse
+        "о": 0, "О": 0,                    // 0 ↔ Cyrillic o/O (filtered out later, but prevents false digits)
     ]
 
     // MARK: - Public
@@ -213,18 +218,39 @@ struct SudokuDetector {
     // MARK: - Single digit recognition
 
     private static func recognizeSingleDigit(_ cgImage: CGImage) async -> Int {
-        // First attempt: 300 px upscale.
-        if let scaled300 = upscaled(cgImage, to: 300) {
-            let d = await ocrCell(scaled300)
-            if d != 0 { return d }
+        // Attempt 1 — 300 px upscale (normal).
+        if let s = upscaled(cgImage, to: 300) {
+            let d = await ocrCell(s); if d != 0 { return d }
         }
-        // Second attempt: 500 px — helps when the digit is thin or low-contrast.
-        if let scaled500 = upscaled(cgImage, to: 500) {
-            let d = await ocrCell(scaled500)
-            if d != 0 { return d }
+        // Attempt 2 — 300 px high-contrast: helps with thin web-font strokes.
+        if let s = highContrast(cgImage, size: 300) {
+            let d = await ocrCell(s); if d != 0 { return d }
         }
-        // Third attempt: original size, no upscaling.
+        // Attempt 3 — 500 px upscale.
+        if let s = upscaled(cgImage, to: 500) {
+            let d = await ocrCell(s); if d != 0 { return d }
+        }
+        // Attempt 4 — 500 px high-contrast.
+        if let s = highContrast(cgImage, size: 500) {
+            let d = await ocrCell(s); if d != 0 { return d }
+        }
+        // Attempt 5 — original size, no processing.
         return await ocrCell(cgImage)
+    }
+
+    /// Upscales and applies high-contrast greyscale — improves recognition of
+    /// thin-stroke digital fonts common in web-rendered Sudoku images.
+    private static func highContrast(_ src: CGImage, size: Int) -> CGImage? {
+        guard let base = upscaled(src, to: size) else { return nil }
+        let ci = CIImage(cgImage: base)
+        guard let filter = CIFilter(name: "CIColorControls",
+                                    parameters: [kCIInputImageKey:      ci,
+                                                 kCIInputContrastKey:   NSNumber(value: 3.5),
+                                                 kCIInputSaturationKey: NSNumber(value: 0.0),
+                                                 kCIInputBrightnessKey: NSNumber(value: 0.0)])
+        else { return nil }
+        guard let out = filter.outputImage else { return nil }
+        return CIContext().createCGImage(out, from: out.extent)
     }
 
     private static func ocrCell(_ cgImage: CGImage) async -> Int {
