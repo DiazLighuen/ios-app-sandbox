@@ -2,4 +2,4 @@
 // Config.xcconfig is gitignored and holds DEVELOPMENT_TEAM + any private overrides.
 #include "Config.xcconfig"
 
-API_BASE_HOST = localhost
+API_BASE_HOST = localhost:8080
