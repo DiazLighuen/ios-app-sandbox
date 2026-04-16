@@ -1,0 +1,5 @@
+// Release — production backend (device builds / TestFlight / App Store)
+// Config.xcconfig is gitignored and holds DEVELOPMENT_TEAM + any private overrides.
+#include "Config.xcconfig"
+
+API_BASE_HOST = oracle-cloud-sandbox.duckdns.org

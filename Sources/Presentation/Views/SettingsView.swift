@@ -81,8 +81,7 @@ struct SettingsView: View {
 
                 // Info
                 Section("settings.info".loc) {
-                    let host = Bundle.main.object(forInfoDictionaryKey: "API_BASE_HOST") as? String ?? "localhost:8080"
-                    LabeledContent("settings.backend".loc, value: host)
+                    LabeledContent("settings.backend".loc, value: AppConfig.apiHost)
                     LabeledContent("settings.version".loc, value: "1.0.0")
                 }
             }

@@ -9,9 +9,24 @@ final class AuthAPI: AuthRepository {
             "/auth/google/mobile",
             method: "POST",
             body: body,
-            authenticated: false
+            authenticated: false,
+            autoLogout: false
         )
         return response.token
+    }
+
+    func linkYouTube(serverAuthCode: String) async throws {
+        struct Body: Encodable {
+            let serverAuthCode: String
+            enum CodingKeys: String, CodingKey { case serverAuthCode = "server_auth_code" }
+        }
+        struct OkResponse: Decodable { let ok: Bool }
+        let _: OkResponse = try await client.request(
+            "/auth/youtube/mobile",
+            method: "POST",
+            body: Body(serverAuthCode: serverAuthCode),
+            autoLogout: false
+        )
     }
 
     func logout() async throws {}

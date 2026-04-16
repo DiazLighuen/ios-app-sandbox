@@ -19,6 +19,9 @@ struct MainTabView: View {
             YouTubeView()
                 .tabItem { Label("Watch", systemImage: "play.tv") }
 
+            SudokuTabView()
+                .tabItem { Label("Sudoku", systemImage: "squareshape.split.3x3") }
+
             SettingsView()
                 .tabItem { Label("tab.settings".loc, systemImage: "gear") }
         }

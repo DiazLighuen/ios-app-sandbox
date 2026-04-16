@@ -30,6 +30,7 @@ final class YouTubeViewModel: ObservableObject {
     @Published private(set) var liveIsLoading = false
 
     @Published var error: String?
+    @Published var needsYouTubeAuth = false
 
     private let repository: YouTubeRepository
 
@@ -48,7 +49,7 @@ final class YouTubeViewModel: ObservableObject {
             homeHasMore = page.hasMore
             if page.hasMore { homePage += 1 }
         } catch {
-            self.error = error.localizedDescription
+            handle(error)
         }
     }
 
@@ -69,7 +70,7 @@ final class YouTubeViewModel: ObservableObject {
             searchNextToken = page.nextPageToken
             searchHasMore = page.hasMore
         } catch {
-            self.error = error.localizedDescription
+            handle(error)
         }
     }
 
@@ -89,7 +90,7 @@ final class YouTubeViewModel: ObservableObject {
             subscriptionsNextToken = page.nextPageToken
             subscriptionsHasMore = page.hasMore
         } catch {
-            self.error = error.localizedDescription
+            handle(error)
         }
     }
 
@@ -106,6 +107,25 @@ final class YouTubeViewModel: ObservableObject {
             let page = try await repository.fetchLive()
             liveStreams = page.items
         } catch {
+            handle(error)
+        }
+    }
+
+    /// Called after YouTube account is successfully linked. Clears the auth prompt and retries.
+    func retryAfterAuth() async {
+        needsYouTubeAuth = false
+        switch selectedTab {
+        case .home:          await loadHome(reset: true)
+        case .live:          await loadLive()
+        case .subscriptions: await loadSubscriptions(reset: true)
+        case .search:        if !searchQuery.isEmpty { await search(reset: true) }
+        }
+    }
+
+    private func handle(_ error: Error) {
+        if case AppError.unauthorized = error {
+            needsYouTubeAuth = true
+        } else {
             self.error = error.localizedDescription
         }
     }
