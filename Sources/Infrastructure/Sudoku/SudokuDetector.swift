@@ -21,11 +21,13 @@ struct SudokuDetector {
         // "q" removed — q looks more like 6 (open tail bottom-left) than 9.
         // Keeping it as 9 was causing 6→9 misclassification.
         "q": 6,                            // 6 ↔ q  (open bottom-left, like 6)
-        "l": 1, "I": 1, "|": 1, "i": 1,  // 1 ↔ l / I / |  / i
+        "l": 1, "I": 1, "|": 1, "i": 1,   // 1 ↔ l / I / | / i
+        "!": 1, "ǀ": 1, "Ɩ": 1,           // 1 ↔ ! / dental click / iota (thin stroke in web fonts)
         "B": 8, "ß": 8,                    // 8 ↔ B / ß
         "A": 4,                            // 4 ↔ A (rare but happens)
         "З": 3, "з": 3,                    // 3 ↔ Cyrillic Ze (identical glyph)
         "Э": 3, "э": 3,                    // 3 ↔ Cyrillic E-reverse
+        "ε": 3, "ɛ": 3, "Ɛ": 3,           // 3 ↔ open-e (Vision multilingual model)
         "о": 0, "О": 0,                    // 0 ↔ Cyrillic o/O (filtered out later, but prevents false digits)
     ]
 
@@ -67,26 +69,14 @@ struct SudokuDetector {
 
     // MARK: - Public bounds detection (used by crop UI)
 
-    /// Fast pre-scan: returns the best grid bounding rect in Vision coordinates
-    /// (origin bottom-left, values 0–1). Combines digit-position clustering with
-    /// rectangle detection. Returns nil when nothing plausible is found.
+    /// Fast pre-scan for the crop UI: finds the largest near-square rectangle
+    /// (the sudoku grid border) in Vision coordinates (origin bottom-left, 0–1).
+    /// Uses Gaussian blur before detection so internal digit noise doesn't
+    /// fragment the contour and the outer border is the dominant feature.
     static func findGridBounds(in image: UIImage) async -> CGRect? {
         let img = image.normalizedOrientation
         guard let cgImage = img.cgImage else { return nil }
-
-        // Run both strategies concurrently.
-        async let digitBoundsResult = fullGridOCR(cgImage: cgImage)
-        async let rectBoundsResult  = findGridBoundsFromRectDetect(cgImage: cgImage)
-
-        let (_, digitBounds) = await digitBoundsResult
-        let rectBounds        = await rectBoundsResult
-
-        switch (digitBounds, rectBounds) {
-        case let (d?, r?): return d.union(r)
-        case let (d?, _):  return d
-        case let (_, r?):  return r
-        case _:            return nil
-        }
+        return await squareRectDetect(cgImage: cgImage)
     }
 
     // MARK: - Strategy 1: Full-image accurate OCR + spatial clustering
@@ -165,8 +155,40 @@ struct SudokuDetector {
         return 0
     }
 
-    // MARK: - Grid detection (S2 fallback)
+    // MARK: - Grid detection
 
+    /// Crop-UI detector: strict square filter, picks the candidate whose
+    /// combined score (area × squareness) is highest.
+    /// Returns nil if no confident square is found so the crop view falls
+    /// back to its default full-image rect rather than showing garbage.
+    private static func squareRectDetect(cgImage: CGImage) async -> CGRect? {
+        await withCheckedContinuation { (c: CheckedContinuation<CGRect?, Never>) in
+            let req = VNDetectRectanglesRequest { r, _ in
+                let obs = (r.results as? [VNRectangleObservation]) ?? []
+                // Score = area × squareness (1 = perfect square, 0 = very elongated).
+                // Only accept candidates that are large enough to plausibly be the grid.
+                let best = obs
+                    .filter { $0.boundingBox.width * $0.boundingBox.height > 0.08 }
+                    .max   { score($0.boundingBox) < score($1.boundingBox) }
+                // Require a minimum squareness so we don't return a banner/rectangle.
+                if let b = best {
+                    let ar = b.boundingBox.width / max(b.boundingBox.height, 0.001)
+                    guard ar > 0.75 && ar < 1.33 else { c.resume(returning: nil); return }
+                }
+                c.resume(returning: best?.boundingBox)
+            }
+            req.minimumAspectRatio  = 0.75
+            req.maximumAspectRatio  = 1.33
+            req.minimumSize         = 0.08
+            req.maximumObservations = 10
+            req.minimumConfidence   = 0.3
+            let h = VNImageRequestHandler(ciImage: CIImage(cgImage: cgImage), options: [:])
+            do { try h.perform([req]) } catch { c.resume(returning: nil) }
+        }
+    }
+
+    /// Generic rect detector used inside the OCR pipeline (looser constraints,
+    /// unioned with digit-derived bounds to widen edge coverage).
     private static func findGridBoundsFromRectDetect(cgImage: CGImage) async -> CGRect? {
         await withCheckedContinuation { (c: CheckedContinuation<CGRect?, Never>) in
             let req = VNDetectRectanglesRequest { r, _ in
@@ -176,11 +198,19 @@ struct SudokuDetector {
             }
             req.minimumAspectRatio = 0.6; req.maximumAspectRatio = 1.4
             req.minimumSize = 0.1; req.maximumObservations = 20; req.minimumConfidence = 0.1
-            let ci = CIImage(cgImage: cgImage)
-            let h = VNImageRequestHandler(ciImage: ci, options: [:])
+            let h = VNImageRequestHandler(ciImage: CIImage(cgImage: cgImage), options: [:])
             do { try h.perform([req]) } catch { c.resume(returning: nil) }
         }
     }
+
+    /// Score used for crop-UI candidate ranking.
+    private static func score(_ r: CGRect) -> Double {
+        let area       = Double(r.width * r.height)
+        let ar         = Double(r.width / max(r.height, 0.001))
+        let squareness = 1.0 - abs(ar - 1.0) / max(ar, 1.0 / ar)
+        return area * squareness
+    }
+
 
     // MARK: - Strategy 2: Cell-by-cell accurate OCR
 

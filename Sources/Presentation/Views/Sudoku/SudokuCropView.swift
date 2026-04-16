@@ -135,16 +135,13 @@ struct SudokuCropView: View {
 
         guard let visionRect = await SudokuDetector.findGridBounds(in: image) else { return }
 
-        // Vision uses bottom-left origin → convert to UIKit top-left
-        let uiRect = CGRect(x: visionRect.minX,
-                            y: 1 - visionRect.maxY,
-                            width:  visionRect.width,
-                            height: visionRect.height)
-        let pad: CGFloat = 0.015
-        normRect = CGRect(x: max(0, uiRect.minX - pad),
-                          y: max(0, uiRect.minY - pad),
-                          width:  min(1, uiRect.width  + 2 * pad),
-                          height: min(1, uiRect.height + 2 * pad))
+        // Vision uses bottom-left origin → convert to UIKit top-left. No padding:
+        // VNDetectRectanglesRequest already reports the outer border, so we use
+        // the rect as-is and let the user nudge the handles if needed.
+        normRect = CGRect(x: max(0, visionRect.minX),
+                          y: max(0, 1 - visionRect.maxY),
+                          width:  min(1, visionRect.width),
+                          height: min(1, visionRect.height))
     }
 
     // MARK: - Confirm
